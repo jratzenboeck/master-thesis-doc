@@ -1,0 +1,55 @@
+%%% Header
+\input{structure/header}
+
+% comment the following line for final submission
+\newcommand{\manuscriptmode}[0]{draft}
+
+\newcommand{\thesistitle}[0]{Using Behavioral Analytics to reason about Customer Satisfaction in data-intensive Software systems}
+
+%%% hyphenation
+\input{structure/hyphenation}
+
+\begin{document}
+
+%%% cover page
+\pagenumbering{roman}
+\includepdf{structure/cover/coversheet.pdf}
+
+%%% structure parts
+\pagenumbering{Roman}
+\include{structure/affidavit}
+\include{structure/acknowledgment}
+\include{structure/abstract}
+\input{structure/indices}
+
+%%% content
+\newpage
+\pagenumbering{arabic}
+
+% Introduction
+\input{chapters/intro}
+
+% Background research
+\input{chapters/background}
+
+% Methods and Implementation
+\input{chapters/implementation}
+
+% Evaluation
+\input{chapters/evaluation}
+
+% Conclusion
+\input{chapters/conclusion}
+
+%%% appendix
+%\appendix
+
+%\input{appendices/tools}
+
+% \input{structure/abbreviations}
+
+\input{structure/bibliography}
+
+% curriculum vitae
+%\input{structure/cv}
+\end{document}
