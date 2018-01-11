@@ -216,7 +216,7 @@ public static Instances filterAttributesWithNoVariance(Instances dataSet) {
 \paragraph{Imputation of missing values}
 As indicated earlier in this section, 5-10 \% of the server command data collected showed missing feature values. In contrast to the cases considered before, these features could not be simply removed from the dataset as they too much important information regarding Customer Satisfaction. The categorical analysis in section \ref{sec:hypothesesDriven} showed for a small random sample a statistical significant evidence that the live tracking success rate influences customer churn. It was decided that this feature has to be kept for the data mining stage. As a result, the best possible technique was imputing the missing values accordingly. First of all, the imputation was done with the mean value of the feature under consideration. This method is available only for numeric attributes which was fine in this situation as the server command related data only consists of numeric features. Extracts of the implementation are shown in listing \ref{lst:meanImputation}.
 
-\begin{lstlisting}[caption={Mean and mode imputation of missing values}, lable={lst:meanImputation}]
+\begin{lstlisting}[caption={Mean and mode imputation of missing values}, label={lst:meanImputation}]
 private static Instances replaceMissingAttributeValues(Instances dataSet, Set<Attribute> replaceableAttributes) {
 	if (!replaceableAttributes.stream().allMatch(Attribute::isNumeric)) {
 		throw new RuntimeException("Not all attributes to replace with the replacement value are numeric");
@@ -249,7 +249,228 @@ Next to the input data set the method takes as second parameter a set of feature
 % TODO: If I have implemented a different imputation method, add the documentation here
 
 \paragraph{Defining the Weka class attribute}
-After reading in the raw data from the CSV file, Weka does not know which of the features is used as class attribute needed to perform a classification task. The class attribute is the ground truth value for each data observation in the training set a classification algorithm uses for learning and evaluating a model. The important metrics provided by the survey results are the overall satisfaction level on a scale from 1-5 and the recommendation potential on a scale from 0-10. As the gathered experience from theory and hypotheses-driven testing at this point in time showed the difficulty of deriving relationships between certain features and Customer Satisfaction, it was decided to make the class value binary, namely satisfied or dissatisfied. With regard to business requirements it made sense to claim that below a rating of 4 customers tend to be dissatisfied while a value of 4 and 5 means that the customer tends to be satisfied. A similar machine learning approach for Customer Satisfaction, documented by \cite{meinzer2016can}, which was mentioned in the related work section did the same satisfaction level classification and thus confirms the thoughts. Therefore, in advance of marking the feature as class attribute it had to be normalized accordingly. 
+After reading in the raw data from the CSV file, Weka does not know which of the features is used as class attribute needed to perform a classification task. The class attribute is the ground truth value for each data observation in the training set a classification algorithm uses for learning and evaluating a model. The important metrics provided by the survey results are the overall satisfaction level on a scale from 1-5 and the recommendation potential on a scale from 0-10. As the gathered experience from theory and hypotheses-driven testing at this point in time showed the difficulty of deriving relationships between certain features and Customer Satisfaction, it was decided to make the class value binary, namely satisfied or dissatisfied. With regard to business requirements it made sense to claim that below a rating of 4 customers tend to be dissatisfied while a value of 4 and 5 means that the customer tends to be satisfied. A similar machine learning approach for Customer Satisfaction, documented by \cite{meinzer2016can}, which was mentioned in the related work section did the same satisfaction level classification and thus confirms the thoughts. Therefore, in advance of setting the feature as class attribute it was normalized according to this satisfaction classification. 
+
+As alternative method it was tried to include the recommendation score into the satisfaction classification. This consideration is supported by literature work outlined in section \ref{ssec:quantitativeMetrics}. The satisfaction score was defined as the mean value of the overall satisfaction- and the recommendation score. $6.5$ was set as threshold value to differentiate between satisfied and dissatisfied customers. After the satisfaction score had been brought into the desired format, the class attribute could be set for the current Weka Instances.
+
+\paragraph{Normalization of numeric values}
+As the numeric features are a mix of different units, like percentages for the server command metrics, absolute numbers or timestamps, a successive classification algorithm would consider some features more important as others. In order to overcome the problem of different units, a linear scaling normalization of numeric values was implemented. As a result, all values are between 0 and 1. Since Weka provides a helpful filter, the normalization can be done conveniently. Code snippet \ref{lst:normalization} shows how to apply this filter.
+
+\begin{lstlisting}[caption={Normalization of numeric feature values}, label={lst:normalization}]
+public static Instances normalizeNumericAttributeValues(Instances dataSet, double minNormalizeValue, double maxNormalizeValue) {
+	Normalize normalizeFilter = new Normalize();
+	normalizeFilter.setScale(maxNormalizeValue);
+	normalizeFilter.setTranslation(minNormalizeValue);
+	return Utils.applyFilter(dataSet, normalizeFilter);
+}
+\end{lstlisting}
+
+\paragraph{Transform nominal to binary values}
+Next to the numeric features, there are also attributes which are enumerations and can take on only a few values. In Weka these features are called nominal. They are not optimal since various classification algorithms can not deal with such enumerations well. The implemented solution transforms the nominal features into binary ones by splitting the given feature into as many separate features as values are possible. For each data observation either 0 or 1 gets associated for the particular transformed feature. 
+Weka again provides a filter which automatically creates new features based on existing ones. 
+Code listing \ref{lst:nominalToBinary} illustrates the implemented transformation.
+
+\begin{lstlisting}[caption={Transformation of nominal- to binary features}, label={lst:nominalToBinary}]
+public static Instances transformNominalToBinaryAttributes(Instances dataSet) {
+	NominalToBinary nominalToBinaryFilter = new NominalToBinary();
+	nominalToBinaryFilter.setTransformAllValues(false);
+	nominalToBinaryFilter.setBinaryAttributesNominal(true);
+	return Utils.applyFilter(dataSet, nominalToBinaryFilter);
+}
+\end{lstlisting}
+
+\paragraph{Dealing with class imbalance}
+Depending on the dataset under consideration an imbalance between the ground truth values is a quite common scenario one has to deal with in classification tasks. A typical example related to class imbalance is the prediction of medical diagnosis cases where the clear majority in the sample is tested negative while a small minority is infected. Before having a look into the data details, the author did not pay any attention to the class distribution in particular but after spot checking a few promising machine learning algorithms on the pre-processed but yet imbalanced dataset, it turned out that the results are very bad and not useful at all. The class distribution of the dataset is shown in a simple bar chart illustrated in figure \ref{fig:classDistribution}. 
+
+\begin{figure}
+	\centering
+	\includegraphics[width=0.8\textwidth]{img/classImbalance.png}
+	\caption{Bar chart illustration of class imbalance problem in customer dataset}
+	\label{fig:classDistribution}
+\end{figure} 
+
+However, as indicated in the background research, different techniques to successfully deal with such imbalances have been researched. In the implementation part focus was paid in particular to the sampling methods. The initial attempt was to perform a simple undersampling on available training data by randomly taking only as many data observations from the satisfied customers to achieve a desired equality between the number of those observations and the dissatisfied ones. In order to give the method a better applicability in the framework, a factor indicating the percentage of minority- relative to majority class observations can be passed. The implementation is shown in listing \ref{lst:simpleUndersampling}. 
+
+\begin{lstlisting}[caption={Implementation of a random undersampling method}, label={lst:simpleUndersampling}]
+public static Instances simpleUnderSampling(Instances dataSet, double minorityClassFactor) {
+	List<Instance> instancesMajorityClass = filterInstancesByClassValue(dataSet,1).collect(Collectors.toList());
+	int numRequiredMajorityInstances = (int) (instancesMajorityClass.size() * minorityClassFactor);
+	
+	Collections.shuffle(instancesMajorityClass);
+	instancesMajorityClass = instancesMajorityClass.subList(0, numRequiredMajorityInstances);
+	dataSet.removeIf(instance -> instance.classValue() == 1);
+	dataSet.addAll(instancesMajorityClass);
+
+	return dataSet;
+}
+private static Stream<Instance> filterInstancesByClassValue(Instances dataSet, double classValue) {
+	return Collections
+		.list(dataSet.enumerateInstances())
+		.stream()
+		.filter(instance -> instance.classValue() == classValue);
+}
+\end{lstlisting}
+
+Although the class imbalance is not as extreme as in other use cases, like data dealing with the prediction of a disease, the random undersampling approach can be considered as an rather trivial algorithm to resolve class imbalance. Due to the reason that the top-down analysis showed that the quality of the data with regard to Customer Satisfaction prediction is not very good and the available dataset is not that huge, throwing away a few hundred observations could remove valuable information for the classification task. Therefore this thesis searched for an oversampling method as alternative. As outlined in respective literature, the difficulty in oversampling is the generation of new observations. Although a combination of simple undersampling and duplication of observations belonging to the minority usually leads to improved classification accuracy on a validation set, it is often affected by overfitting to the learned model. Thus, the accuracy on real test set turns out to be completely different in contrast to the training phase. As a result of literature research, the focus was put on the implementation of the SMOTE algorithm to generate new observations fitting to a realistic distribution of provided data. The implementation of SMOTE is illustrated in pseudo code in listing \ref{lst:smote}. 
+
+\begin{lstlisting}[caption={SMOTE algorithm in pseudo code}, label={lst:smote}]
+Instances smote(dataSet, oversamplingPctg, k) {
+	if (oversamplingPctg < 100) {
+		chooseRandomSamples(dataSet, oversamplingPctg)
+	}
+	for i <- 0..dataSet.length {
+		nearestNeighbors = chooseNearestNeighbors(dataSet[i], dataSet, k)
+		syntheticObservations.add(generateSyntheticObservations(dataSet[i], nearestNeighbors))
+	}
+	return merge(dataSet, syntheticObservations)
+}
+
+Instances chooseNearestNeighbors(dataSet[i], dataSet, k) {
+	nearestNeighbors = []
+	for i <- 0..k {
+		nearestNeighbors[i] = euclideanDistance(dataSet[i], dataSet)
+	}
+	return nearestNeighborIndices
+}
+
+Instances generateSyntheticObservations(dataSet, observation, nearestNeighborIndices, k) {
+	syntheticSamples = []
+	for i <- 0..k {
+		for j <- 0..dataSet[i].attributesNr {
+			diff = observation[i] - dataSet[nearestNeighborIndices][i]
+			syntheticSamples[i][j] = observation[i] + random(0, 1) * diff
+		}
+	}
+	return syntheticSamples
+}
+\end{lstlisting}
+
+\subsubsection{Feature Engineering}
+The first step in limiting the feature space was done manually based on the fit of data sources to the proposed Customer Satisfaction model. Since there are still a lot of features in preprocessed data set, the author decided to implement an automatic feature selection algorithm to find and skip redundant ones which potentially even diminish classification accuracy. The first algorithm is based on the intra-inter-correlation feature selection technique introduced in section \ref{sssec:featureEngineering}. Therefore an abstract class called AttributeSelectionStrategy was implemented which generates a list of possible feature subsets and returns the best one depending on the concrete selection algorithm. An extract of this class is shown in code listing \ref{lst:attributeSelectionStrategy}.
+
+\begin{lstlisting}[caption={AttributeSelectionStrategy}, label={lst:attributeSelectionStrategy}]
+@Override
+public Set<Attribute> getBestAttributeSet() {
+	List<Set<Attribute>> attributeSubSets = generateAttributeSubsets();
+	return getBestAttributeSubSet(attributeSubSets);
+}
+
+List<Set<Attribute>> generateAttributeSubsets() {
+	List<Set<Attribute>> attributeSubSets = new ArrayList<>();
+	ThreadLocalRandom random = ThreadLocalRandom.current();
+	
+	for (int i = 0; i < maxIterations; i++) {
+		Set<Attribute> currentAttributeSet = new HashSet<>();
+		
+		for (int j = 0; j <= random.nextInt(minSetSize, maxSetSize); j++) {
+			int randomAttributeIndex = random.nextInt(0, getDataSet().numAttributes());
+			currentAttributeSet.add(getDataSet().attribute(randomAttributeIndex));
+		}
+		attributeSubSets.add(currentAttributeSet);
+	}
+	return attributeSubSets;
+}
+
+abstract Set<Attribute> getBestAttributeSubSet(List<Set<Attribute>> attributeSubSets);
+\end{lstlisting}
+
+The method getBestAttributeSubSet is implemented in a concrete class inheriting the AttributeSelectionStrategy and provides an implementation for the selection of the best possible attribute subset. In terms of correlation based feature selection, first each all subsets are iterated and for each one the overall correlation, consisting of inter- and intra coefficient, as outlined in section \ref{sssec:featureEngineering} gets calculated. The subsets are then sorted depending on the correlation coefficient in reverse order and the first one picked. Subsequently the feature engineering filters the identified features within the best subset by applying the Remove filter from Weka. 
+
+As indicated in the theory of feature engineering, a powerful technique is the learner based feature selection. Although it has the disadvantage of higher runtime complexity, especially with an increased number of features, the author decided to give it a try and check whether results can be improved. For implementation the WrapperSubsetEval class provided by Weka was used. For the learner evaluation typically a fast classifier should be used. As decision trees are proven to be fast, I selected the C4.5 Java implementation called J48 as base learner. The last attribute to be set in the AttributeSelection filter is the search method indicating when the attribute selection has to be terminated. Based on research results of \cite{aggarwal2013performance} it was decided to use the BestFirst search method. Due to the limitations of this thesis no detailed research comparing different search methods for feature selection was conducted. After applying the configured AttributeSelection filter, Weka returns the data set with reduced feature dimensions selected.
+
+\subsubsection{ClassificationEngine}
+The final part in the Customer Satisfaction prediction framework was the training of classification algorithms on the preprocessed, transformed and feature engineered data set. As revealed in literature research pointed out in section \ref{ssec:bottomUp}, there is no ultimate classifier for such a type of data set. Although Weka provides a GUI called Weka Explorer which allows fast application of classifiers on a data set, it is only intended for manual experiments. Thus, the Explorer was only used a few times in the beginning to get a feeling on the development of prediction accuracy and getting an overview on the provided evaluation measures. Instead, the goal was to implement a program, which gets passed different versions of preprocessed data sets and a set of classification algorithms as input, and finds the best combination of data set and classifier based on a representative measure. 
+
+In order to realize this intention, a new class called DataSetCreator was introduced. This class first of all is responsible for configuring necessary parameters regarding preprocessing, data transformation and feature engineering. The main functionality of the DataSetCreator is to use a passed configuration and generate the desired data sets as output. A code extract of this class is illustrated in listing \ref{lst:dataSetCreator}. 
+
+\begin{lstlisting}[caption={DataSetCreator}, label={lst:dataSetCreator}]
+private Instances createPreprocessedDataSet(Instances dataSet, boolean filterTooManyMissing,
+boolean replaceMissingAttrValues, boolean markAllMissingNumericValues,
+boolean replaceAllMissingAttrValues,
+AbstractMap.SimpleEntry<Boolean, Integer> discretizeConfig,
+SamplingConfig simpleUndersampling, SamplingConfig simpleOversampling,
+SmoteSamplingConfig smoteOversampling) {
+	System.out.println("Starting to create a preprocessed data set");
+	
+	if (filterTooManyMissing) {
+		dataSet = PreProcessingEngine.filterAttributesWithTooManyMissingValues(dataSet);
+	}
+	if (replaceAllMissingAttrValues) {
+		dataSet = PreProcessingEngine.replaceAllMissingAttributeValues(dataSet);
+	}
+	if (simpleUndersampling.isEnabled()) {
+		dataSet = PreProcessingEngine.simpleUnderSampling(dataSet, simpleUndersampling.getPercentageMinorityClass());
+	}
+	if (smoteOversampling.isEnabled()) {
+		dataSet = PreProcessingEngine.smoteOversampling(dataSet, smoteOversampling.getPercentageMinorityClass(), smoteOversampling.getNumNeighbors());
+	}
+	// more code ...
+	return dataSet;
+}
+\end{lstlisting}
+
+Different preprocessing combinations were defined by the author. For all generated datasets the unneeded attributes which were mentioned in the PreprocessingEngine get removed upfront and nominal values transformed to binary ones as classification algorithms cannot deal well with pure nominal ones. A selection of data sets was done by using combinations of following configurations:
+
+\begin{itemize}
+	\item Replace missing numeric values with the mean value of a particular feature 
+	\item Replace binary features with the mode value of a particular feature
+	\item Discretize numeric values by putting them into 10 bins. (Due to the amount of configuration combinations and resulting time constraints, no further experimenting regarding the number of discretization bins was conducted)
+	\item Undersampling the training set of satisfied customers by applying the random undersampling introduced earlier in this chapter.
+	\item Oversampling the training set of dissatisfied customers by duplicating randomly chosen observations.
+	\item SMOTE oversampling the training set of dissatisfied customers.
+\end{itemize}
+
+Regarding the sampling methods, the minority respectively majority class was sampled on a range starting with 70\% and increased in 5\% steps. As a result of generating data sets by these different configurations, a total number of xx data sets was created. 
+
+The next challenge now deals with the processing of these data sets by classification algorithms. Therefore a class named ClassifiersCreator was implemented. The main task of this class is to instantiate different classifiers, which were promised to perform well on similar Customer Satisfaction related problems introduced in literature. Moreover as baseline the author decided to use an algorithm called ZeroR in Weka which only relies on the class values and only predicts the majority class correctly. This classifier is not considered as relevant for the thesis but should only be used as benchmark for comparison. The actual classification algorithms discussed in more detail in section \ref{ssec:classificationAlgorithms} were included in the framework. 
+
+Due to the reason that dissatisfied customers are more important to be reliably detected in order to tackle their problems early enough, the author decided to experiment with penalties for misclassification. Therefore Weka provides an abstract class called CostSensitiveClassifier. This class allows to pass a penalty matrix where the author specified a value ranging between 1.1 and 2.0 incremented by 0.1. The remaining step after initializing the penalty matrix is to wrap the base classifier. Having instantiated a set of Weka Instances, representing the data sets to be classified, and a set of Weka classifiers, the models can be built and evaluated. 
+
+Hence, the main method in the ClassificationEngine iterates over the data sets and trains every selected classifier on each of them. Based on literature research the preferred evaluation method is a 10-fold cross validation, which was used in the implementation of this prediction framework as well. Therefore the Weka Evaluation class with the method crossValidateModel was used. Evaluated classifiers get compared first by the AUC value, representing the area under the ROC calculated by integrating the respective function of the curve. As second measurement it was decided to consider the percentage of correctly classified instances as the preprocessing actively tackled the class imbalance issue. These values are provided by the Evaluation class after cross validating the learned model. If both values are high enough, the combination of configured data set and classifier gets stored in memory. After completing evaluation iterations, both the best- dataset and classifier gets stored with all details in separate files on disk for later analysis of the results (see chapter \ref{ch:results}). The quintessence of the ClassificationEngine is illustrated in code extract \ref{lst:classificationEngine}. 
+
+\begin{lstlisting}[caption={Applying configured classifiers on preprocessed data sets}, label={lst:classificationEngine}]
+public void classifyDataSets() {
+	double bestPctCorrect = 0.0;
+	double bestAuc = 0.0;
+	AbstractMap.SimpleEntry<Instances, Classifier> bestCombination = null;
+	Evaluation bestEvaluation = null;
+	long startTime = new Date().getTime();
+	int datasetNr = 1;
+	
+	for (Instances dataSet : dataSets) {
+		for (Classifier classifier : classifiers) {
+			try {
+				classifier.buildClassifier(dataSet);
+				Evaluation evaluation = new Evaluation(dataSet);
+				evaluation.crossValidateModel(classifier, dataSet, NUM_FOLDS, new Random(1));
+	
+				double auc = evaluation.weightedAreaUnderROC();
+				double pctCorrect = evaluation.pctCorrect();
+				
+				if (bestCombination == null || (pctCorrect > bestPctCorrect && auc > bestAuc)) {
+					bestCombination = new AbstractMap.SimpleEntry<>(dataSet, classifier);
+					bestPctCorrect = evaluation.pctCorrect();
+					bestAuc = auc;
+					bestEvaluation = evaluation;
+				}
+			} catch (Exception e) {
+				System.out.println("Applying classifier " + classifier.toString() + " to dataset with relation name" +
+				dataSet.relationName() + " was not successful.");
+			}
+		}
+		System.out.println("Classifier evaluation for data set " + datasetNr + " took " +
+		Utils.timeDifferenceToString(new Date().getTime() - startTime));
+		datasetNr++;
+	}
+	System.out.println("Wohoo! All data sets evaluated!");
+	saveBestCombination(bestCombination, bestEvaluation);
+}
+\end{lstlisting}
+
+This chapter provided a thorough view onto the functionality and implementation of the automatic Customer Satisfaction prediction framework based on a data-driven approach. The results of this prediction framework will be illustrated in the following chapter.
+
+
+
 
 
 
