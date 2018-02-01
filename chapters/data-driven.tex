@@ -214,7 +214,7 @@ public static Instances filterAttributesWithNoVariance(Instances dataSet) {
 \end{lstlisting}
 
 \paragraph{Imputation of missing values}
-As indicated earlier in this section, 5-10 \% of the server command data collected showed missing feature values. In contrast to the cases considered before, these features could not be simply removed from the dataset as they too much important information regarding Customer Satisfaction. The categorical analysis in section \ref{sec:hypothesesDriven} showed for a small random sample a statistical significant evidence that the live tracking success rate influences customer churn. It was decided that this feature has to be kept for the data mining stage. As a result, the best possible technique was imputing the missing values accordingly. First of all, the imputation was done with the mean value of the feature under consideration. This method is available only for numeric attributes which was fine in this situation as the server command related data only consists of numeric features. Extracts of the implementation are shown in listing \ref{lst:meanImputation}.
+As indicated earlier in this section, 5-10 \% of the server command data collected showed missing feature values. In contrast to the cases considered before, these features could not be simply removed from the dataset as they deliver important information regarding Customer Satisfaction. The categorical analysis in section \ref{sec:hypothesesDriven} showed for a small random sample a statistical significant evidence that the live tracking success rate influences customer churn. It was decided that this feature has to be kept for the data mining stage. As a result, the best possible technique was imputing the missing values accordingly. First of all, the imputation was done with the mean value of the feature under consideration. This method is available only for numeric attributes which was fine in this situation as the server command related data only consists of numeric features. Extracts of the implementation are shown in listing \ref{lst:meanImputation}.
 
 \begin{lstlisting}[caption={Mean and mode imputation of missing values}, label={lst:meanImputation}]
 private static Instances replaceMissingAttributeValues(Instances dataSet, Set<Attribute> replaceableAttributes) {
@@ -246,7 +246,39 @@ private static double getReplacementValue(Instances dataSet, Attribute attribute
 
 Next to the input data set the method takes as second parameter a set of features to replace with the mean value. First of all the method asserts whether all features to replace are numeric, otherwise an exception will be thrown. Within the subsequent while loop the features to replace are searched and the value gets substituted by a replacement value, calculated in getReplacementValue(dataSet, currentAttribute). This method iterates over all instances and calculates the arithmetic mean among the present values for the current feature.
 
-% TODO: If I have implemented a different imputation method, add the documentation here
+Although this mean and mode imputation technique is widely used in data preprocessing for knowledge discovery processes, it has a downside of not considering feature values missing due to dependence on certain other features (i.e data is missing not completely randomly, see \ref{sssec:explorationData}) and as a consequence could cause learning a biased model which in turn causes overfitting during the classification stage later on. Therefore the author of this thesis decided to invest time in constructing a more sophisticated imputation method based on feature values from similar data observations instead of a global average. With the k-nearest neighbor imputation a  promising technique was found in an analysis of methods for treating missing values correctly by \cite{batista2003analysis}. The main part of the implementation is shown in code listing \ref{lst:kNearestNeighborFs} and will be explained briefly. 
+
+\begin{lstlisting}[caption={Mean and mode imputation of missing values}, label={lst:meanImputation}]
+public static Instances kNearestNeighborImputation(Instances dataSet, int k) {
+	Collections.list(dataSet.enumerateInstances())
+		.stream()
+		.filter(Instance::hasMissingValue)
+		.forEach(instance -> {
+			LinearNNSearch knn = new LinearNNSearch(dataSet);
+			Instances neighbors;
+			try {
+				neighbors = knn.kNearestNeighbours(instance, k);
+			} catch (Exception e) {
+				throw new RuntimeException("An error occurred while searching for nearest neighbors", e);
+			}
+			for (int i = 0; i < instance.numAttributes(); i++) {
+				if (instance.isMissing(i)) {
+					Attribute attr = instance.attribute(i);
+					if (attr.isNumeric()) {
+						double meanAttrValue = Utils.calculateMeanAttrValue(neighbors, attr);
+						instance.setValue(attr, meanAttrValue);
+					} else {
+						String modeAttrValue = Utils.calculateModeAttrValue(neighbors, attr);
+						instance.setValue(attr, modeAttrValue);
+					}
+				}
+			}
+		});
+		return dataSet;
+}
+\end{lstlisting}
+
+After filtering all instances with missing values, the $k$ nearest neighbors based on their similarity regarding feature values are determined. Therefore, Weka's kNearestNeighbours(instance, k) method was used. Subsequently, for each of the instances every attribute with a missing value gets iterated and replaced. Depending on the type of feature the replacement is done either with the mean (in case of a numeric feature) or the mode (in case of a nominal feature) among the $k$ identified neighbors provided that their specific value is present. Otherwise, the particular neighbor instance is not considered.
 
 \paragraph{Defining the Weka class attribute}
 After reading in the raw data from the CSV file, Weka does not know which of the features is used as class attribute needed to perform a classification task. The class attribute is the ground truth value for each data observation in the training set a classification algorithm uses for learning and evaluating a model. The important metrics provided by the survey results are the overall satisfaction level on a scale from 1-5 and the recommendation potential on a scale from 0-10. As the gathered experience from theory and hypotheses-driven testing at this point in time showed the difficulty of deriving relationships between certain features and Customer Satisfaction, it was decided to make the class value binary, namely satisfied or dissatisfied. With regard to business requirements it made sense to claim that below a rating of 4 customers tend to be dissatisfied while a value of 4 and 5 means that the customer tends to be satisfied. A similar machine learning approach for Customer Satisfaction, documented by \cite{meinzer2016can}, which was mentioned in the related work section did the same satisfaction level classification and thus confirms the thoughts. Therefore, in advance of setting the feature as class attribute it was normalized according to this satisfaction classification. 
@@ -346,7 +378,7 @@ Instances generateSyntheticObservations(dataSet, observation, nearestNeighborInd
 \end{lstlisting}
 
 \subsubsection{Feature Engineering}
-The first step in limiting the feature space was done manually based on the fit of data sources to the proposed Customer Satisfaction model. Since there are still a lot of features in preprocessed data set, the author decided to implement an automatic feature selection algorithm to find and skip redundant ones which potentially even diminish classification accuracy. The first algorithm is based on the intra-inter-correlation feature selection technique introduced in section \ref{sssec:featureEngineering}. Therefore an abstract class called AttributeSelectionStrategy was implemented which generates a list of possible feature subsets and returns the best one depending on the concrete selection algorithm. An extract of this class is shown in code listing \ref{lst:attributeSelectionStrategy}.
+The first step in limiting the feature space was done manually based on the fit of data sources to the proposed Customer Satisfaction model. Since there are still a lot of features in the preprocessed data set, the author decided to implement an automatic feature selection algorithm to find and skip redundant ones which potentially even diminish classification accuracy. The first algorithm is based on the intra-inter-correlation feature selection technique introduced in section \ref{sssec:featureEngineering}. Therefore an abstract class called AttributeSelectionStrategy was implemented which generates a list of possible feature subsets and returns the best one depending on the concrete selection algorithm. An extract of this class is shown in code listing \ref{lst:attributeSelectionStrategy}.
 
 \begin{lstlisting}[caption={AttributeSelectionStrategy}, label={lst:attributeSelectionStrategy}]
 @Override
@@ -374,9 +406,58 @@ List<Set<Attribute>> generateAttributeSubsets() {
 abstract Set<Attribute> getBestAttributeSubSet(List<Set<Attribute>> attributeSubSets);
 \end{lstlisting}
 
-The method getBestAttributeSubSet is implemented in a concrete class inheriting the AttributeSelectionStrategy and provides an implementation for the selection of the best possible attribute subset. In terms of correlation based feature selection, first each all subsets are iterated and for each one the overall correlation, consisting of inter- and intra coefficient, as outlined in section \ref{sssec:featureEngineering} gets calculated. The subsets are then sorted depending on the correlation coefficient in reverse order and the first one picked. Subsequently the feature engineering filters the identified features within the best subset by applying the Remove filter from Weka. 
+The method getBestAttributeSubSet is implemented in a concrete class inheriting the AttributeSelectionStrategy and provides an implementation for the selection of the best possible attribute subset. In terms of correlation based feature selection, first each all subsets are iterated and for each one the overall correlation, consisting of inter- and intra coefficient, as outlined in section \ref{sssec:featureEngineering} gets calculated. The according implementation of this computation is show in code listing \ref{lst:attributeSelectionStrategy}. 
 
-As indicated in the theory of feature engineering, a powerful technique is the learner based feature selection. Although it has the disadvantage of higher runtime complexity, especially with an increased number of features, the author decided to give it a try and check whether results can be improved. For implementation the WrapperSubsetEval class provided by Weka was used. For the learner evaluation typically a fast classifier should be used. As decision trees are proven to be fast, I selected the C4.5 Java implementation called J48 as base learner. The last attribute to be set in the AttributeSelection filter is the search method indicating when the attribute selection has to be terminated. Based on research results of \cite{aggarwal2013performance} it was decided to use the BestFirst search method. Due to the limitations of this thesis no detailed research comparing different search methods for feature selection was conducted. After applying the configured AttributeSelection filter, Weka returns the data set with reduced feature dimensions selected.
+\begin{lstlisting}[caption={AttributeSelectionStrategy}, label={lst:attributeSelectionStrategy}]
+Correlation calculateCorrelation(Set<Attribute> attributeSubSet) {
+	double interCorrelation = calculateInterCorrelation(attributeSubSet, getClassAttributeValues());
+	double intraCorrelation = calculateIntraCorrelation(attributeSubSet);
+	return new Correlation(attributeSubSet, interCorrelation / intraCorrelation);
+}
+
+double calculateInterCorrelation(Set<Attribute> attributeSubSet, double[] classAttributeValues) {
+	return attributeSubSet
+		.stream()
+		.map(attribute -> Collections.list(getDataSet().enumerateInstances())
+			.stream()
+			.mapToDouble(instance -> instance.value(attribute))
+			.toArray())
+		.collect(Collectors.averagingDouble(attributeValues ->
+			new PearsonsCorrelation().correlation(attributeValues, classAttributeValues)));
+}
+
+double calculateIntraCorrelation(Set<Attribute> attributeSubSet) {
+	List<Attribute> attributes = new ArrayList<>(attributeSubSet);
+	double sumCorrelationCoefficients = 0;
+	
+	for (int i = 0; i < attributes.size() - 1; i++) {
+		double[] valuesOfFirstAttribute = getDataSet().attributeToDoubleArray(attributes.get(i).index());
+		for (int j = i + 1; j < attributes.size(); j++) {
+			double[] valuesOfSecondAttribute = getDataSet().attributeToDoubleArray(attributes.get(j).index());
+			sumCorrelationCoefficients += new PearsonsCorrelation().correlation(valuesOfFirstAttribute, valuesOfSecondAttribute);
+		}
+	}
+	return sumCorrelationCoefficients / CombinatoricsUtils.binomialCoefficient(attributeSubSet.size(), 2);
+}
+\end{lstlisting}
+
+After calculating the overall correlation for each feature subsets, the results are then sorted in reverse order and the first one is finally picked as the best one. Subsequently the feature engineering super class filters the identified features within the best subset by applying the Remove filter from Weka on the non-selected ones. 
+
+As indicated in the theory of feature engineering, the learner based feature selection can be a powerful technique. Although it has the disadvantage of higher runtime complexity, especially with an increased number of features and also is bound to a specific classification algorithm type, the author decided to give it a try and check whether results can be improved. For implementation the WrapperSubsetEval class provided by Weka was used. Due to time constraints, for the learner evaluation typically a fast classifier had to be used. As mentioned in the background research on classification algorithms in section \ref{ssec:classificationAlgorithms}, decision trees are rather trivial and therefore fast to build, the C4.5 Java implementation called J48 was selected as base learner. How this learner based feature selection was configured and applied with Weka is illustrated in code extract \ref{lst:wrapperBasedFs}. 
+
+\begin{lstlisting}[caption={AttributeSelectionStrategy}, label={lst:wrapperBasedFs}]
+public static Instances learnerBasedFeatureSelection(Instances dataSet) {
+	AttributeSelection attributeSelectionFilter = new AttributeSelection();
+	WrapperSubsetEval learner = new WrapperSubsetEval();
+	learner.setClassifier(new J48());
+	attributeSelectionFilter.setEvaluator(learner);
+	attributeSelectionFilter.setSearch(new BestFirst());
+	
+	return Utils.applyFilter(dataSet, attributeSelectionFilter);
+}
+\end{lstlisting}
+
+The last attribute to be set in the attributeSelectionFilter is the method indicating how the algorithm searches along the feature space and generates subsets. The best first technique, introduced in the background research in section \ref{sssec:featureEngineering} was specified here. It was expected that it ensures a high quality of selected features and adheres time constraints. 
 
 \subsubsection{ClassificationEngine}
 The final part in the Customer Satisfaction prediction framework was the training of classification algorithms on the preprocessed, transformed and feature engineered data set. As revealed in literature research pointed out in section \ref{ssec:bottomUp}, there is no ultimate classifier for such a type of data set. Although Weka provides a GUI called Weka Explorer which allows fast application of classifiers on a data set, it is only intended for manual experiments. Thus, the Explorer was only used a few times in the beginning to get a feeling on the development of prediction accuracy and getting an overview on the provided evaluation measures. Instead, the goal was to implement a program, which gets passed different versions of preprocessed data sets and a set of classification algorithms as input, and finds the best combination of data set and classifier based on a representative measure. 
@@ -424,7 +505,34 @@ Regarding the sampling methods, the minority respectively majority class was sam
 
 The next challenge now deals with the processing of these data sets by classification algorithms. Therefore a class named ClassifiersCreator was implemented. The main task of this class is to instantiate different classifiers, which were promised to perform well on similar Customer Satisfaction related problems introduced in literature. Moreover as baseline the author decided to use an algorithm called ZeroR in Weka which only relies on the class values and only predicts the majority class correctly. This classifier is not considered as relevant for the thesis but should only be used as benchmark for comparison. The actual classification algorithms discussed in more detail in section \ref{ssec:classificationAlgorithms} were included in the framework. 
 
-Due to the reason that dissatisfied customers are more important to be reliably detected in order to tackle their problems early enough, the author decided to experiment with penalties for misclassification. Therefore Weka provides an abstract class called CostSensitiveClassifier. This class allows to pass a penalty matrix where the author specified a value ranging between 1.1 and 2.0 incremented by 0.1. The remaining step after initializing the penalty matrix is to wrap the base classifier. Having instantiated a set of Weka Instances, representing the data sets to be classified, and a set of Weka classifiers, the models can be built and evaluated. 
+Due to the reason that dissatisfied customers are more important to be reliably detected in order to tackle their problems early enough, the author decided to experiment with penalties for misclassification. Therefore Weka provides an abstract class called CostSensitiveClassifier. This class allows to pass a penalty matrix where the author specified a value ranging between 1.1 and 2.0 incremented by 0.1. The remaining step after initializing the penalty matrix is to wrap the base classifier. Code snippet \ref{lst:costSensitiveClassifier} outlines the concrete implementation shortly. 
+
+\begin{lstlisting}[caption={DataSetCreator}, label={lst:dataSetCreator}]
+private static Set<CostSensitiveClassifier> createCostSensitiveClassifiers(Set<Classifier> baseClassifiers) {
+	Set<CostSensitiveClassifier> classifiers = new HashSet<>();
+	
+	baseClassifiers.forEach(classifier -> {
+		for (double penalty = 1.1; penalty <= 2.0; penalty += 0.1) {
+			CostSensitiveClassifier costSensitiveClassifier = new CostSensitiveClassifier();
+			costSensitiveClassifier.setClassifier(classifier);
+			costSensitiveClassifier.setCostMatrix(buildCostMatrix(penalty));
+			classifiers.add(costSensitiveClassifier);
+		}
+	});
+	return classifiers;
+}
+
+private static CostMatrix buildCostMatrix(double penaltyFalseNegatives) {
+	CostMatrix costMatrix = new CostMatrix(2);
+	costMatrix.setElement(0, 0, 0.0);
+	costMatrix.setElement(0, 1, penaltyFalseNegatives);
+	costMatrix.setElement(1, 0, 1.0);
+	costMatrix.setElement(1, 1, 0.0);
+	return costMatrix;
+}
+\end{lstlisting}
+
+Having instantiated a set of Weka Instances, representing the data sets to be classified, and a set of Weka classifiers, the models can be built and evaluated. 
 
 Hence, the main method in the ClassificationEngine iterates over the data sets and trains every selected classifier on each of them. Based on literature research the preferred evaluation method is a 10-fold cross validation, which was used in the implementation of this prediction framework as well. Therefore the Weka Evaluation class with the method crossValidateModel was used. Evaluated classifiers get compared first by the AUC value, representing the area under the ROC calculated by integrating the respective function of the curve. As second measurement it was decided to consider the percentage of correctly classified instances as the preprocessing actively tackled the class imbalance issue. These values are provided by the Evaluation class after cross validating the learned model. If both values are high enough, the combination of configured data set and classifier gets stored in memory. After completing evaluation iterations, both the best- dataset and classifier gets stored with all details in separate files on disk for later analysis of the results (see chapter \ref{ch:evaluation}). The quintessence of the ClassificationEngine is illustrated in code extract \ref{lst:classificationEngine}. 
 
