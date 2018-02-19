@@ -1,0 +1,5 @@
+Fragen an Prof. Kotsis
+
+- Case Study Tractive: Soll ich hier tractive.com als Quelle angeben für den Absatz?
+- Soll ich das Bild der Landing page drinnen lassen?
+- Muss ich ® bei third-party software (wie zb bei Zendesk) dazuschreiben?
